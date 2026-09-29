@@ -2,27 +2,27 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 
 /* ============================================================
-   Maliyet Analizi — GYF Yıllık Sabit Gider / Toplam Gider
+   Cost Analysis — REIF Annual Fixed Expense / Total Expense
    ------------------------------------------------------------
-   Toplam Gider = Yıllık Yönetim Ücreti + BSMV + Diğer Masraflar
-     • Yıllık Yönetim Ücreti = Portföy Büyüklüğü × Yönetim Ücreti Oranı
-     • BSMV                  = Yıllık Yönetim Ücreti × BSMV Oranı
-     • Diğer Masraflar       = Σ (gider satırları)
+   Total Expense = Annual Management Fee + BSMV + Other Expenses
+     • Annual Management Fee = Portfolio Size × Management Fee Rate
+     • BSMV                  = Annual Management Fee × BSMV Rate
+     • Other Expenses        = Σ (expense rows)
 
-   Her gider satırının HESABI (Toplam Tutar sütunu):
-     • Sabit satır  → Değer × Dönem × (1 + vergi)   [Değer kutusunda ₺]
-                       örn. Bağımsız Denetim: 280.000 × 1 × 1,20 = 336.000
-                       örn. E-Defter: 1.184 × 12 × 1,20 = 17.049,60
-     • Oran satırı  → Portföy × oran(%) × Dönem × (1 + vergi)  [Değer kutusunda %]
-                       örn. SPK: 1.000.000.000 × %0,005 × 4 = 200.000
-     • Boş (—)      → hesaba 0 katkı
+   Each expense row's TOTAL AMOUNT column:
+     • Fixed row → Value × Period × (1 + tax)   [Value box in $]
+                    e.g. Independent Audit: 280,000 × 1 × 1.20 = 336,000
+                    e.g. E-Ledger: 1,184 × 12 × 1.20 = 17,049.60
+     • Rate row  → Portfolio × rate(%) × Period × (1 + tax)  [Value box in %]
+                    e.g. CMB (SPK): 1,000,000,000 × 0.005% × 4 = 200,000
+     • Empty (—) → contributes 0 to the total
 
-   Dönem = bir yıl içindeki tahsil/çarpan sayısı (ay veya dönem).
-   Vergi  hem Sabit hem Oran satırlarına uygulanabilir (KDV / BSMV / Yok).
+   Period = number of collections/multipliers within a year (month or period).
+   Tax applies to both Fixed and Rate rows (VAT / BSMV / None).
 
-   ÖNEMLİ: Temel Veriler'deki KDV ve BSMV oranları doğrudan gider
-   satırlarına bağlıdır. BSMV'yi %5 → %7 yaparsan "BSMV" seçili tüm
-   satırlar anında %7 ile yeniden hesaplanır.
+   IMPORTANT: The VAT and BSMV rates in Base Data directly drive the
+   expense rows. If you change BSMV from 5% → 7%, every row with "BSMV"
+   selected instantly recalculates at 7%.
    ============================================================ */
 
 // --- helpers -------------------------------------------------
@@ -100,7 +100,7 @@ function RateInput({ value, onChange, className }) {
   );
 }
 
-// --- Değer cell with a fixed unit affix (₺ for fixed, % for rate) ---
+// --- Value cell with a fixed unit affix ($ for fixed, % for rate) ---
 function UnitField({ unit, children }) {
   return (
     <div className="unit">
@@ -133,7 +133,7 @@ function HelpIcon({ text }) {
       className="help"
       tabIndex={0}
       role="button"
-      aria-label="Açıklama"
+      aria-label="Description"
       onMouseEnter={show}
       onMouseLeave={hide}
       onFocus={show}
@@ -154,128 +154,140 @@ function HelpIcon({ text }) {
 }
 
 // ============================================================
-//  DEFAULTS  (reproduce the workbook's 6.997.852,75 ₺ total)
+//  DEFAULTS — all values start zeroed, matching the Reset state
 // ============================================================
 const DEFAULT_ASSUMPTIONS = {
-  portfolio: "1000000000", // Portföy Büyüklüğü (TL)
-  mgmtFeePct: "0,5", // Fon Yönetim Ücreti Oranı (%)
-  bsmvPct: "5", // BSMV Oranı (%)
-  kdvPct: "20", // KDV Oranı (%)
+  portfolio: "0", // Portfolio Size ($)
+  mgmtFeePct: "0", // Fund Management Fee Rate (%)
+  bsmvPct: "0", // BSMV Rate (%)
+  kdvPct: "0", // VAT Rate (%)
 };
 
-// type: "fixed" → Değer × Dönem × (1+vergi)
-//       "rate"  → portföy × oran × Dönem × (1+vergi)
-//       "none"  → boş (0)
-// tax:   "kdv" | "bsmv" | "none"   (Sabit ve Oran satırlarında uygulanır)
-// donem: bir yıldaki çarpan/dönem sayısı (varsayılan 1)
+// type: "fixed" → Value × Period × (1+tax)
+//       "rate"  → portfolio × rate × Period × (1+tax)
+//       "none"  → empty (0)
+// tax:   "kdv" | "bsmv" | "none"   (applies to Fixed and Rate rows)
+// donem: number of multipliers/periods within a year (default 1)
 const DEFAULT_ROWS = [
   {
-    name: "Bağımsız Denetim",
-    payee: "Bağımsız Denetçi",
+    name: "Independent Audit",
+    payee: "Independent Auditor",
     type: "fixed",
-    amount: "280000",
+    amount: "0",
+    rate: "0",
     donem: "1",
     tax: "kdv",
-    info: "6 ayda bir,  2 taksit şeklinde ödenir",
+    info: "Paid semi-annually, in 2 installments",
   },
   {
-    name: "Yeminli Mali Müşavirlik",
+    name: "Certified Public Accountant (YMM)",
     payee: "YMM",
     type: "fixed",
-    amount: "120000",
+    amount: "0",
+    rate: "0",
     donem: "1",
     tax: "kdv",
-    info: "6 ayda bir,  2 taksit şeklinde ödenir",
+    info: "Paid semi-annually, in 2 installments",
   },
   {
-    name: "E-Defter",
+    name: "E-Ledger",
     payee: "İNFİNA",
     type: "fixed",
-    amount: "1184",
-    donem: "12",
+    amount: "0",
+    rate: "0",
+    donem: "1",
     tax: "kdv",
-    info: "Kullanım ücreti 6 aylık ödenir. Temmuz'da fiyat revize edilir",
+    info: "Usage fee is paid every 6 months. Price is revised in July",
   },
   {
-    name: "Vergiler",
+    name: "Taxes",
     payee: "GİB",
     type: "fixed",
-    amount: "10000",
+    amount: "0",
+    rate: "0",
     donem: "1",
     tax: "none",
-    info: "3 Dönem Geçici+1 Yıllık Kurumlar  Bildirimi Damga Vergisi. BSMV Her ay, Geçici 3 ayda bir, Kurumlar yıllık peşin ödenir",
+    info: "3 Provisional + 1 Annual Corporate Tax Return Stamp Duty. BSMV paid monthly, Provisional Tax quarterly, Corporate Tax paid annually in advance",
   },
   {
-    name: "Kolektif Saklama Ücreti GYF",
+    name: "Collective Custody Fee (REIF)",
     payee: "İşbankası",
     type: "rate",
-    rate: "0,1",
+    amount: "0",
+    rate: "0",
     donem: "1",
     tax: "none",
-    info: "Yıllık oran, 3 Ayda bir ödenir. Büyüklük üzerinden tahakkuk eder. Aylık taban rakam:59.000 TL",
+    info: "Annual rate, paid quarterly. Accrues based on portfolio size. Monthly minimum: $59,000",
   },
   {
-    name: "Takasbank Saklama Komisyonu",
+    name: "Takasbank Custody Commission",
     payee: "Takasbank",
     type: "none",
     amount: "0",
+    rate: "0",
     donem: "1",
     tax: "none",
-    info: "Gayrimenkul dışındaki varlıklar için ödenir.",
+    info: "Paid for assets other than real estate.",
   },
   {
-    name: "SPK Kurul Kayıt Ücreti",
+    name: "CMB Registration Fee (SPK)",
     payee: "SPK",
     type: "rate",
-    rate: "0,005",
-    donem: "4",
-    tax: "none",
-    info: "3 Aylık orandır. Her 3. ay son iş günü fon raporu büyüklüğü üzerinden tahakkuk eder.",
-  },
-  {
-    name: "Noter Onaylı Resmi Defter",
-    payee: "Noter",
-    type: "fixed",
-    amount: "5003.7",
+    amount: "0",
+    rate: "0",
     donem: "1",
     tax: "none",
-    info: "Pay alım satım ve envanter defteri, Yatırım Komitesi Karar Defteri. Peşin Ödenir. Sabit Ücret",
+    info: "Quarterly rate. Accrues on the fund report size on the last business day of every 3rd month.",
   },
   {
-    name: "LEİ Kodu",
+    name: "Notarized Official Ledger",
+    payee: "Notary",
+    type: "fixed",
+    amount: "0",
+    rate: "0",
+    donem: "1",
+    tax: "none",
+    info: "Share purchase/sale and inventory ledger, Investment Committee Decision Ledger. Paid in advance. Fixed fee",
+  },
+  {
+    name: "LEI Code",
     payee: "Takasbank",
     type: "fixed",
-    amount: "3281",
+    amount: "0",
+    rate: "0",
     donem: "1",
     tax: "bsmv",
-    info: "Peşin Ödenir. Sabit Ücret",
+    info: "Paid in advance. Fixed fee",
   },
   {
-    name: "KAP Yıllık Bakım Ücreti",
+    name: "KAP Annual Maintenance Fee",
     payee: "MKK",
     type: "fixed",
-    amount: "25512",
+    amount: "0",
+    rate: "0",
     donem: "1",
     tax: "kdv",
-    info: "Peşin Ödenir. Sabit Ücret",
+    info: "Paid in advance. Fixed fee",
   },
   {
-    name: "Mali Mühür",
+    name: "Fiscal Seal",
     payee: "Kamu-SM",
     type: "fixed",
-    amount: "1740",
+    amount: "0",
+    rate: "0",
     donem: "1",
     tax: "none",
-    info: "3 yıllık alınıyor,fonda ünvan değişikliği olması durumunda tekrar başvuru ücreti ödenir. Sabit ücret, peşin ödenir",
+    info: "Issued for 3 years; a re-application fee is paid if the fund's title changes. Fixed fee, paid in advance",
   },
   {
-    name: "KDV Ödemesi",
+    name: "VAT Payment",
     payee: "GİB",
     type: "none",
     amount: "0",
+    rate: "0",
     donem: "1",
     tax: "none",
-    info: "Elde edilen kira gelirlerine bağlı olarak değişmekte olup zorunlu giderdir.",
+    info: "Varies based on rental income received; a mandatory expense.",
   },
 ];
 
@@ -286,25 +298,25 @@ function compute(a, rows) {
   const bsmvRate = num(a.bsmvPct) / 100;
   const kdvRate = num(a.kdvPct) / 100;
 
-  const mgmtFee = portfolio * mgmtRate; // Yıllık Yönetim Ücreti
+  const mgmtFee = portfolio * mgmtRate; // Annual Management Fee
   const bsmv = mgmtFee * bsmvRate; // BSMV
 
-  // vergi çarpanı temel verilerdeki oranlardan gelir (bağlı)
+  // tax multiplier comes from the rates in Base Data (linked)
   const taxRateOf = (tax) =>
     tax === "kdv" ? kdvRate : tax === "bsmv" ? bsmvRate : 0;
 
   const rowAmounts = rows.map((row) => {
     if (row.type === "none") return 0;
-    // boş Dönem = 1 sayılır
+    // empty Period counts as 1
     const donem = row.donem === "" || row.donem == null ? 1 : num(row.donem);
     const taxMul = 1 + taxRateOf(row.tax);
     const base =
       row.type === "rate" ? portfolio * (num(row.rate) / 100) : num(row.amount);
     return base * donem * taxMul;
   });
-  const otherCosts = rowAmounts.reduce((s, v) => s + v, 0); // Diğer Masraflar
+  const otherCosts = rowAmounts.reduce((s, v) => s + v, 0); // Other Expenses
 
-  const total = mgmtFee + bsmv + otherCosts; // Toplam Gider
+  const total = mgmtFee + bsmv + otherCosts; // Total Expense
 
   return {
     portfolio,
@@ -367,43 +379,39 @@ function App() {
 
       <header className="hd">
         <div className="hd-titles">
-          <h1>Maliyet Analizi</h1>
-          <p>GYF Yıllık Sabit Gider &amp; Toplam Gider Hesaplama</p>
+          <h1>Cost Analysis</h1>
+          <p>REIF Annual Fixed Expense &amp; Total Expense Calculation</p>
         </div>
         <button className="ghost" onClick={reset}>
-          Sıfırla
+          Reset
         </button>
       </header>
 
       {/* 01 — ASSUMPTIONS */}
       <section className="panel">
         <div className="sec-label">
-          <span className="sec-no">01</span> Temel Veriler
+          <span className="sec-no">01</span> Base Data
         </div>
         <div className="grid">
-          <Field label="Portföy Büyüklüğü" hint="Portfolio size" suffix="₺">
+          <Field label="Portfolio Size" suffix="$">
             <MoneyInput
               value={a.portfolio}
               onChange={(v) => setAssum("portfolio", v)}
             />
           </Field>
-          <Field
-            label="Yönetim Ücreti Oranı"
-            hint="Management fee rate"
-            suffix="%"
-          >
+          <Field label="Management Fee Rate" suffix="%">
             <RateInput
               value={a.mgmtFeePct}
               onChange={(v) => setAssum("mgmtFeePct", v)}
             />
           </Field>
-          <Field label="BSMV Oranı" hint="BSMV rate" suffix="%">
+          <Field label="BSMV Rate" suffix="%">
             <RateInput
               value={a.bsmvPct}
               onChange={(v) => setAssum("bsmvPct", v)}
             />
           </Field>
-          <Field label="KDV Oranı" hint="VAT rate" suffix="%">
+          <Field label="VAT Rate" hint="KDV" suffix="%">
             <RateInput
               value={a.kdvPct}
               onChange={(v) => setAssum("kdvPct", v)}
@@ -412,11 +420,11 @@ function App() {
         </div>
         <div className="derived">
           <span>
-            <b>Yıllık Yönetim Ücreti</b> {tl(r.mgmtFee)} ₺
+            <b>Annual Management Fee</b> {tl(r.mgmtFee)} $
           </span>
           <span className="dot" />
           <span>
-            <b>BSMV</b> {tl(r.bsmv)} ₺
+            <b>BSMV</b> {tl(r.bsmv)} $
           </span>
         </div>
       </section>
@@ -424,10 +432,10 @@ function App() {
       {/* 02 — COST TABLE */}
       <section className="panel">
         <div className="sec-label">
-          <span className="sec-no">02</span> Doğrudan Fon'dan Karşılanan
-          Giderler
+          <span className="sec-no">02</span> Expenses Paid Directly by the
+          Fund
           <button className="add" onClick={addRow}>
-            + Satır Ekle
+            + Add Row
           </button>
         </div>
 
@@ -436,13 +444,13 @@ function App() {
             <thead>
               <tr>
                 <th className="rownum"></th>
-                <th className="edit">Gider Adı</th>
-                <th className="edit">Tahsil Eden</th>
-                <th className="edit ctr">Tür</th>
-                <th className="edit ctr">Dönem</th>
-                <th className="edit num">Değer</th>
-                <th className="edit ctr">Vergi</th>
-                <th className="num key">Toplam Tutar (₺)</th>
+                <th className="edit">Expense Name</th>
+                <th className="edit">Collected By</th>
+                <th className="edit ctr">Type</th>
+                <th className="edit ctr">Period</th>
+                <th className="edit num">Value</th>
+                <th className="edit ctr">Tax</th>
+                <th className="num key">Total Amount ($)</th>
                 <th className="del"></th>
               </tr>
             </thead>
@@ -454,7 +462,7 @@ function App() {
                     <div className="namecell">
                       <input
                         value={row.name}
-                        placeholder="Gider adı"
+                        placeholder="Expense name"
                         onChange={(e) => setRow(i, "name", e.target.value)}
                       />
                       <HelpIcon text={row.info} />
@@ -473,9 +481,9 @@ function App() {
                       value={row.type}
                       onChange={(e) => setRow(i, "type", e.target.value)}
                     >
-                      <option value="fixed">Sabit</option>
-                      <option value="rate">Oran</option>
-                      <option value="none">— (Boş)</option>
+                      <option value="fixed">Fixed</option>
+                      <option value="rate">Rate</option>
+                      <option value="none">— (Empty)</option>
                     </select>
                   </td>
                   <td className="edit ctr">
@@ -499,7 +507,7 @@ function App() {
                         />
                       </UnitField>
                     ) : row.type === "fixed" ? (
-                      <UnitField unit="₺">
+                      <UnitField unit="$">
                         <MoneyInput
                           className="ri uin"
                           value={row.amount || ""}
@@ -519,9 +527,9 @@ function App() {
                         value={row.tax || "none"}
                         onChange={(e) => setRow(i, "tax", e.target.value)}
                       >
-                        <option value="kdv">KDV</option>
+                        <option value="kdv">VAT</option>
                         <option value="bsmv">BSMV</option>
-                        <option value="none">Yok</option>
+                        <option value="none">None</option>
                       </select>
                     )}
                   </td>
@@ -532,7 +540,7 @@ function App() {
                     <button
                       onClick={() => delRow(i)}
                       disabled={rows.length <= 1}
-                      title="Satırı sil"
+                      title="Delete row"
                     >
                       ×
                     </button>
@@ -544,11 +552,11 @@ function App() {
               <tr>
                 <td></td>
                 <td colSpan={5} className="foot-l">
-                  Diğer Masraflar Toplamı
+                  Other Expenses Total
                 </td>
                 <td className="num"></td>
                 <td className="num key">
-                  <span className="mny">{tl(r.otherCosts)}</span> ₺
+                  <span className="mny">{tl(r.otherCosts)}</span> $
                 </td>
                 <td></td>
               </tr>
@@ -562,10 +570,10 @@ function App() {
         <div className="tape-in">
           <div className="tape-total">
             <span className="tt-label">
-              <span className="live" /> Toplam Gider
+              <span className="live" /> Total Expense
             </span>
             <span className="tt-value">
-              <span className="mny">{tl(r.total)}</span> ₺
+              <span className="mny">{tl(r.total)}</span> $
             </span>
           </div>
 
@@ -573,7 +581,7 @@ function App() {
             <div
               className="compbar"
               role="img"
-              aria-label="Toplam giderin bileşenlere oranı"
+              aria-label="Proportion of total expense by component"
             >
               <i className="seg sg1" style={{ width: segMgmt + "%" }} />
               <i className="seg sg2" style={{ width: segBsmv + "%" }} />
@@ -582,15 +590,15 @@ function App() {
             <div className="legend">
               <span className="lg">
                 <i className="dot sg1" />
-                Yönetim Ücreti <b>{tl(r.mgmtFee, 0)} ₺</b>
+                Management Fee <b>{tl(r.mgmtFee, 0)} $</b>
               </span>
               <span className="lg">
                 <i className="dot sg2" />
-                BSMV <b>{tl(r.bsmv, 0)} ₺</b>
+                BSMV <b>{tl(r.bsmv, 0)} $</b>
               </span>
               <span className="lg">
                 <i className="dot sg3" />
-                Diğer Masraflar <b>{tl(r.otherCosts, 0)} ₺</b>
+                Other Expenses <b>{tl(r.otherCosts, 0)} $</b>
               </span>
             </div>
           </div>
@@ -727,7 +735,7 @@ td.edit input::placeholder{color:var(--ink3);opacity:.55}
 td.edit.ctr .sel{text-align:center;text-align-last:center;cursor:pointer;font-size:11.5px;color:var(--accent-d);font-weight:600;min-width:74px}
 td.edit.ctr .dash{color:var(--ink3);opacity:.5}
 
-/* Değer cell with fixed unit affix (₺ / %) */
+/* Value cell with fixed unit affix ($ / %) */
 .unit{display:flex;align-items:stretch;border-radius:7px;background:#fff;overflow:hidden;
   box-shadow:inset 0 0 0 1px var(--line);transition:.12s}
 .unit:focus-within{box-shadow:inset 0 0 0 1px var(--accent),0 0 0 3px var(--accent-soft)}
